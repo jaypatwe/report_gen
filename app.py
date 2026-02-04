@@ -4,14 +4,8 @@ import os
 import io
 import zipfile
 import tempfile
-import shutil
-import subprocess
 import sys
 import xlrd
-try:
-    import rarfile
-except Exception:
-    rarfile = None
 from openpyxl import Workbook
 from openpyxl.utils.dataframe import dataframe_to_rows
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
@@ -135,7 +129,7 @@ class VirtualUploadedFile:
 
 
 def extract_archive_files(archive_file):
-    """Extract .xls files from a zip/rar upload and return file-like objects."""
+    """Extract .xls files from a zip upload and return file-like objects."""
     extracted = []
     name = getattr(archive_file, "name", "").lower()
     content = archive_file.read()
@@ -151,52 +145,7 @@ def extract_archive_files(archive_file):
                     extracted.append(VirtualUploadedFile(info.filename, content))
         return extracted
 
-    if name.endswith(".rar"):
-        if rarfile is None:
-            st.error("RAR support requires 'rarfile' and an unrar/bsdtar tool installed.")
-            return []
-        try:
-            tmp_path = None
-            with tempfile.NamedTemporaryFile(delete=False, suffix=".rar") as tmp:
-                tmp.write(content)
-                tmp_path = tmp.name
-            try:
-                with rarfile.RarFile(tmp_path) as rf:
-                    for info in rf.infolist():
-                        if info.is_dir():
-                            continue
-                        if info.filename.lower().endswith(".xls"):
-                            file_bytes = rf.read(info)
-                            extracted.append(VirtualUploadedFile(info.filename, file_bytes))
-            finally:
-                if tmp_path and os.path.exists(tmp_path):
-                    os.remove(tmp_path)
-        except Exception as e:
-            # Fallback: try system bsdtar/7z extraction
-            try:
-                tool = shutil.which("bsdtar") or shutil.which("7z")
-                if not tool:
-                    st.error(f"Could not read RAR file: {e}")
-                    return []
-                with tempfile.TemporaryDirectory() as extract_dir:
-                    if "bsdtar" in tool.lower():
-                        subprocess.run([tool, "-xf", tmp_path, "-C", extract_dir], check=True)
-                    else:
-                        subprocess.run([tool, "x", f"-o{extract_dir}", tmp_path], check=True)
-                    for root, _, files in os.walk(extract_dir):
-                        for file in files:
-                            if file.lower().endswith(".xls"):
-                                file_path = os.path.join(root, file)
-                                with open(file_path, "rb") as f:
-                                    file_bytes = f.read()
-                                rel_path = os.path.relpath(file_path, extract_dir)
-                                extracted.append(VirtualUploadedFile(rel_path, file_bytes))
-            except Exception as e2:
-                st.error(f"Could not read RAR file: {e2}")
-                return []
-        return extracted
-
-    st.error("Unsupported archive type. Please upload .zip or .rar")
+    st.error("Unsupported archive type. Please upload a .zip file.")
     return []
 
 
@@ -697,7 +646,7 @@ st.info("""
 **How to upload:**
 1. Select all .xls files from your school folder (including all month subfolders)
 2. Make sure each file path includes the month folder name (e.g., `APR 25/file.xls`)
-3. Or upload a single .zip or .rar of the whole school folder
+3. Or upload a single .zip of the whole school folder
 
 **Expected folder structure:**
 ```
@@ -713,8 +662,8 @@ School Folder/
 """)
 
 zip_upload = st.file_uploader(
-    "Upload school folder (.zip or .rar)",
-    type=["zip", "rar"],
+    "Upload school folder (.zip)",
+    type=["zip"],
     accept_multiple_files=False,
     help="Zip the school folder with month subfolders, then upload"
 )
