@@ -172,8 +172,28 @@ def extract_archive_files(archive_file):
                 if tmp_path and os.path.exists(tmp_path):
                     os.remove(tmp_path)
         except Exception as e:
-            st.error(f"Could not read RAR file: {e}")
-            return []
+            # Fallback: try system bsdtar/7z extraction
+            try:
+                tool = shutil.which("bsdtar") or shutil.which("7z")
+                if not tool:
+                    st.error(f"Could not read RAR file: {e}")
+                    return []
+                with tempfile.TemporaryDirectory() as extract_dir:
+                    if "bsdtar" in tool.lower():
+                        subprocess.run([tool, "-xf", tmp_path, "-C", extract_dir], check=True)
+                    else:
+                        subprocess.run([tool, "x", f"-o{extract_dir}", tmp_path], check=True)
+                    for root, _, files in os.walk(extract_dir):
+                        for file in files:
+                            if file.lower().endswith(".xls"):
+                                file_path = os.path.join(root, file)
+                                with open(file_path, "rb") as f:
+                                    file_bytes = f.read()
+                                rel_path = os.path.relpath(file_path, extract_dir)
+                                extracted.append(VirtualUploadedFile(rel_path, file_bytes))
+            except Exception as e2:
+                st.error(f"Could not read RAR file: {e2}")
+                return []
         return extracted
 
     st.error("Unsupported archive type. Please upload .zip or .rar")
