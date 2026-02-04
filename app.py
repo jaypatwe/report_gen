@@ -138,9 +138,11 @@ def extract_archive_files(archive_file):
     """Extract .xls files from a zip/rar upload and return file-like objects."""
     extracted = []
     name = getattr(archive_file, "name", "").lower()
+    content = archive_file.read()
+    archive_file.seek(0)
 
     if name.endswith(".zip"):
-        with zipfile.ZipFile(archive_file) as zf:
+        with zipfile.ZipFile(io.BytesIO(content)) as zf:
             for info in zf.infolist():
                 if info.is_dir():
                     continue
@@ -154,13 +156,21 @@ def extract_archive_files(archive_file):
             st.error("RAR support requires 'rarfile' and an unrar/bsdtar tool installed.")
             return []
         try:
-            with rarfile.RarFile(archive_file) as rf:
-                for info in rf.infolist():
-                    if info.is_dir():
-                        continue
-                    if info.filename.lower().endswith(".xls"):
-                        content = rf.read(info)
-                        extracted.append(VirtualUploadedFile(info.filename, content))
+            tmp_path = None
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".rar") as tmp:
+                tmp.write(content)
+                tmp_path = tmp.name
+            try:
+                with rarfile.RarFile(tmp_path) as rf:
+                    for info in rf.infolist():
+                        if info.is_dir():
+                            continue
+                        if info.filename.lower().endswith(".xls"):
+                            file_bytes = rf.read(info)
+                            extracted.append(VirtualUploadedFile(info.filename, file_bytes))
+            finally:
+                if tmp_path and os.path.exists(tmp_path):
+                    os.remove(tmp_path)
         except Exception as e:
             st.error(f"Could not read RAR file: {e}")
             return []
