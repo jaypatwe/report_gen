@@ -2,10 +2,15 @@ import pandas as pd
 import os
 import sys
 import xlrd
+import time
 from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.page import PageMargins
+
+# PDF generation using Excel automation
+import win32com.client
+from PyPDF2 import PdfMerger
 
 # ===== CONFIGURATION =====
 # Usage: python report.py [folder_name]
@@ -455,6 +460,104 @@ def create_employee_report(emp_name, emp_df, all_numeric_cols):
     return wb
 
 
+def create_consolidated_pdf_from_excel(output_dir, output_pdf_path):
+    """
+    Create consolidated PDF by exporting each Excel file to PDF using Excel,
+    then merging all PDFs into one.
+    """
+    print("\nCreating consolidated PDF using Excel export...")
+    
+    # Create temp folder for individual PDFs
+    temp_pdf_dir = os.path.join(output_dir, "_temp_pdfs")
+    os.makedirs(temp_pdf_dir, exist_ok=True)
+    
+    # Get all xlsx files
+    xlsx_files = [f for f in os.listdir(output_dir) if f.endswith('.xlsx')]
+    xlsx_files.sort()  # Sort alphabetically by employee name
+    
+    if not xlsx_files:
+        print("No Excel files found to convert!")
+        return 0
+    
+    print(f"Found {len(xlsx_files)} Excel files to convert...")
+    
+    # Initialize Excel application
+    excel = None
+    try:
+        excel = win32com.client.Dispatch("Excel.Application")
+        excel.Visible = False
+        excel.DisplayAlerts = False
+        
+        pdf_files = []
+        converted_count = 0
+        
+        for idx, xlsx_file in enumerate(xlsx_files):
+            xlsx_path = os.path.join(output_dir, xlsx_file)
+            pdf_name = xlsx_file.replace('.xlsx', '.pdf')
+            pdf_path = os.path.join(temp_pdf_dir, pdf_name)
+            
+            try:
+                # Open workbook
+                wb = excel.Workbooks.Open(os.path.abspath(xlsx_path))
+                
+                # Export to PDF (0 = xlTypePDF)
+                wb.ExportAsFixedFormat(0, os.path.abspath(pdf_path))
+                
+                wb.Close(SaveChanges=False)
+                
+                pdf_files.append(pdf_path)
+                converted_count += 1
+                
+                if converted_count % 10 == 0:
+                    print(f"  Converted {converted_count}/{len(xlsx_files)} files...")
+                    
+            except Exception as e:
+                print(f"  Error converting {xlsx_file}: {e}")
+                continue
+        
+        print(f"Converted {converted_count} files to PDF")
+        
+        # Merge all PDFs
+        if pdf_files:
+            print("Merging PDFs...")
+            merger = PdfMerger()
+            
+            for pdf_path in pdf_files:
+                try:
+                    merger.append(pdf_path)
+                except Exception as e:
+                    print(f"  Error merging {pdf_path}: {e}")
+            
+            merger.write(output_pdf_path)
+            merger.close()
+            
+            print(f"Merged {len(pdf_files)} PDFs into consolidated file")
+        
+        # Cleanup temp PDFs
+        print("Cleaning up temporary files...")
+        for pdf_path in pdf_files:
+            try:
+                os.remove(pdf_path)
+            except:
+                pass
+        try:
+            os.rmdir(temp_pdf_dir)
+        except:
+            pass
+        
+        return converted_count
+        
+    except Exception as e:
+        print(f"Excel automation error: {e}")
+        raise
+    finally:
+        if excel:
+            try:
+                excel.Quit()
+            except:
+                pass
+
+
 # =================== MAIN ===================
 
 print("Loading merged data...")
@@ -506,3 +609,19 @@ for emp_name, emp_df in df.groupby(EMP_NAME_COL):
         print(f"Error creating report for {emp_name}: {e}")
 
 print(f"\n[SUCCESS] Generated {count} employee reports in: {OUTPUT_DIR}")
+
+# ===== Generate Consolidated PDF =====
+print("\n" + "="*50)
+print("Generating Consolidated PDF (Excel Print Preview Style)...")
+print("="*50)
+
+pdf_output_path = os.path.join(OUTPUT_DIR, f"{SCHOOL_FOLDER}_All_Reports_Consolidated.pdf")
+
+try:
+    pdf_count = create_consolidated_pdf_from_excel(OUTPUT_DIR, pdf_output_path)
+    print(f"\n[SUCCESS] Consolidated PDF created: {pdf_output_path}")
+    print(f"          Contains {pdf_count} employee reports in landscape A4 format")
+except Exception as e:
+    print(f"[ERROR] Failed to create consolidated PDF: {e}")
+    import traceback
+    traceback.print_exc()

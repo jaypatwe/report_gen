@@ -694,7 +694,7 @@ if selected_files and school_name:
     
     st.markdown("---")
     
-    # Process button
+    # Process button — store results in session_state so they survive reruns
     if st.button("🚀 Process Files", type="primary", use_container_width=True):
         
         st.markdown('<p class="step-header">Step 2: Preparing Files...</p>', unsafe_allow_html=True)
@@ -723,32 +723,72 @@ if selected_files and school_name:
                     st.error("Reports folder not found. Please check your inputs.")
                     st.stop()
                 
-                reports_zip = zip_folder(reports_dir)
+                reports_zip_bytes = zip_folder(reports_dir).getvalue()
                 
-                st.markdown(f"""
-                <div class="success-box">
-                    <strong>✅ Process Complete!</strong><br>
-                    • Merged file and reports are ready
-                </div>
-                """, unsafe_allow_html=True)
+                # Check for consolidated PDF (Excel print preview style)
+                pdf_path = os.path.join(reports_dir, f"{school_name}_All_Reports_Consolidated.pdf")
+                pdf_bytes = None
+                if os.path.exists(pdf_path):
+                    with open(pdf_path, "rb") as f:
+                        pdf_bytes = f.read()
                 
-                st.download_button(
-                    label="📥 Download Merged Excel",
-                    data=merged_bytes,
-                    file_name=f"{school_name}_Merged_Monthly.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
-                
-                st.download_button(
-                    label="📥 Download All Reports (ZIP)",
-                    data=reports_zip.getvalue(),
-                    file_name=f"{school_name}_Income_Tax_Reports.zip",
-                    mime="application/zip"
-                )
-                
-                st.balloons()
+                # Persist results in session_state so download buttons work on reruns
+                st.session_state["results"] = {
+                    "school_name": school_name,
+                    "merged_bytes": merged_bytes,
+                    "reports_zip_bytes": reports_zip_bytes,
+                    "pdf_bytes": pdf_bytes,
+                }
+            
+            status_text.text("Done!")
+            st.balloons()
         except Exception as e:
             st.error(f"Processing failed: {e}")
+    
+    # Show download buttons if results are available (persists across reruns)
+    if "results" in st.session_state and st.session_state["results"]["school_name"] == school_name:
+        results = st.session_state["results"]
+        
+        pdf_status = "and consolidated PDF (Excel print preview)" if results["pdf_bytes"] else "(PDF requires Excel installed)"
+        st.markdown(f"""
+        <div class="success-box">
+            <strong>✅ Process Complete!</strong><br>
+            • Merged file, individual Excel reports {pdf_status} are ready
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Create 3 columns for download buttons
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.download_button(
+                label="📥 Download Merged Excel",
+                data=results["merged_bytes"],
+                file_name=f"{school_name}_Merged_Monthly.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True
+            )
+        
+        with col2:
+            st.download_button(
+                label="📥 Download All Reports (ZIP)",
+                data=results["reports_zip_bytes"],
+                file_name=f"{school_name}_Income_Tax_Reports.zip",
+                mime="application/zip",
+                use_container_width=True
+            )
+        
+        with col3:
+            if results["pdf_bytes"]:
+                st.download_button(
+                    label="📄 Download Consolidated PDF",
+                    data=results["pdf_bytes"],
+                    file_name=f"{school_name}_All_Reports_Consolidated.pdf",
+                    mime="application/pdf",
+                    use_container_width=True
+                )
+            else:
+                st.warning("PDF not generated (requires Excel)")
 
 elif selected_files and not school_name:
     st.warning("Please enter the school name to continue.")
