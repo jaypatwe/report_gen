@@ -8,9 +8,13 @@ from openpyxl.styles import Font, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 from openpyxl.worksheet.page import PageMargins
 
-# PDF generation using Excel automation
-import win32com.client
-from PyPDF2 import PdfMerger
+# PDF generation using Excel automation (Windows-only)
+try:
+    import win32com.client
+    from PyPDF2 import PdfMerger
+    HAS_WIN32 = True
+except ImportError:
+    HAS_WIN32 = False
 
 # ===== CONFIGURATION =====
 # Usage: python report.py [folder_name]
@@ -611,17 +615,20 @@ for emp_name, emp_df in df.groupby(EMP_NAME_COL):
 print(f"\n[SUCCESS] Generated {count} employee reports in: {OUTPUT_DIR}")
 
 # ===== Generate Consolidated PDF =====
-print("\n" + "="*50)
-print("Generating Consolidated PDF (Excel Print Preview Style)...")
-print("="*50)
+if HAS_WIN32:
+    print("\n" + "="*50)
+    print("Generating Consolidated PDF (Excel Print Preview Style)...")
+    print("="*50)
 
-pdf_output_path = os.path.join(OUTPUT_DIR, f"{SCHOOL_FOLDER}_All_Reports_Consolidated.pdf")
+    pdf_output_path = os.path.join(OUTPUT_DIR, f"{SCHOOL_FOLDER}_All_Reports_Consolidated.pdf")
 
-try:
-    pdf_count = create_consolidated_pdf_from_excel(OUTPUT_DIR, pdf_output_path)
-    print(f"\n[SUCCESS] Consolidated PDF created: {pdf_output_path}")
-    print(f"          Contains {pdf_count} employee reports in landscape A4 format")
-except Exception as e:
-    print(f"[ERROR] Failed to create consolidated PDF: {e}")
-    import traceback
-    traceback.print_exc()
+    try:
+        pdf_count = create_consolidated_pdf_from_excel(OUTPUT_DIR, pdf_output_path)
+        print(f"\n[SUCCESS] Consolidated PDF created: {pdf_output_path}")
+        print(f"          Contains {pdf_count} employee reports in landscape A4 format")
+    except Exception as e:
+        print(f"[ERROR] Failed to create consolidated PDF: {e}")
+        import traceback
+        traceback.print_exc()
+else:
+    print("\n[SKIP] PDF generation skipped (pywin32 not available — requires Windows with Excel installed)")
