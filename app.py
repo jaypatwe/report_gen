@@ -184,6 +184,7 @@ def run_scripts(root_dir, school_name):
 
     merge_cmd = [sys.executable, "merge_alternate.py", school_name]
     report_cmd = [sys.executable, "report.py", school_name]
+    summary_cmd = [sys.executable, "summary.py", school_name]
 
     merge_result = subprocess.run(
         merge_cmd,
@@ -202,6 +203,15 @@ def run_scripts(root_dir, school_name):
     )
     if report_result.returncode != 0:
         raise RuntimeError(report_result.stderr or report_result.stdout)
+
+    summary_result = subprocess.run(
+        summary_cmd,
+        capture_output=True,
+        text=True,
+        env=env
+    )
+    if summary_result.returncode != 0:
+        raise RuntimeError(summary_result.stderr or summary_result.stdout)
 
 
 def zip_folder(folder_path):
@@ -710,6 +720,7 @@ if selected_files and school_name:
                 
                 merged_path = os.path.join(temp_root, f"{school_name}_Merged_Monthly.xlsx")
                 reports_dir = os.path.join(temp_root, f"{school_name}_income_tax_reports")
+                summary_path = os.path.join(temp_root, f"{school_name}_Summary_Totals.xlsx")
                 
                 if not os.path.exists(merged_path):
                     st.error("Merged file not found. Please check your inputs.")
@@ -725,6 +736,12 @@ if selected_files and school_name:
                 
                 reports_zip_bytes = zip_folder(reports_dir).getvalue()
                 
+                # Read summary file
+                summary_bytes = None
+                if os.path.exists(summary_path):
+                    with open(summary_path, "rb") as f:
+                        summary_bytes = f.read()
+                
                 # Check for consolidated PDF (Excel print preview style)
                 pdf_path = os.path.join(reports_dir, f"{school_name}_All_Reports_Consolidated.pdf")
                 pdf_bytes = None
@@ -737,6 +754,7 @@ if selected_files and school_name:
                     "school_name": school_name,
                     "merged_bytes": merged_bytes,
                     "reports_zip_bytes": reports_zip_bytes,
+                    "summary_bytes": summary_bytes,
                     "pdf_bytes": pdf_bytes,
                 }
             
@@ -750,15 +768,16 @@ if selected_files and school_name:
         results = st.session_state["results"]
         
         pdf_status = "and consolidated PDF (Excel print preview)" if results["pdf_bytes"] else "(PDF requires Excel installed)"
+        summary_status = ", summary totals" if results.get("summary_bytes") else ""
         st.markdown(f"""
         <div class="success-box">
             <strong>✅ Process Complete!</strong><br>
-            • Merged file, individual Excel reports {pdf_status} are ready
+            • Merged file, individual Excel reports{summary_status} {pdf_status} are ready
         </div>
         """, unsafe_allow_html=True)
         
-        # Create 3 columns for download buttons
-        col1, col2, col3 = st.columns(3)
+        # Create 4 columns for download buttons
+        col1, col2, col3, col4 = st.columns(4)
         
         with col1:
             st.download_button(
@@ -779,6 +798,18 @@ if selected_files and school_name:
             )
         
         with col3:
+            if results.get("summary_bytes"):
+                st.download_button(
+                    label="📥 Download Summary Totals",
+                    data=results["summary_bytes"],
+                    file_name=f"{school_name}_Summary_Totals.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
+            else:
+                st.warning("Summary not generated")
+        
+        with col4:
             if results["pdf_bytes"]:
                 st.download_button(
                     label="📄 Download Consolidated PDF",
